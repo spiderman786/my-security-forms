@@ -30,6 +30,9 @@ module.exports = async (req, res) => {
         return res.status(500).json({ error: 'GitHub token not set' });
     }
 
+    console.log('Token length:', token.length); // Debug: Token check
+    console.log('Request body:', req.body); // Debug: Incoming data
+
     try {
         let currentData = [];
         try {
@@ -41,6 +44,7 @@ module.exports = async (req, res) => {
                 currentData = JSON.parse(Buffer.from(data.content, 'base64').toString());
             }
         } catch (error) {
+            console.log('Get error:', error.message, error.response?.status);
             if (error.response?.status !== 404) {
                 throw new Error(`Failed to fetch file: ${error.message}`);
             }
@@ -68,9 +72,10 @@ module.exports = async (req, res) => {
             { headers: { Authorization: `token ${token}` } }
         );
 
+        console.log('Put success:', response.status); // Debug: Confirm success
         res.status(200).json({ message: 'Data saved successfully', sha: response.data.content.sha });
     } catch (error) {
-        console.error('Error:', error.message);
+        console.error('Error:', error.message, error.response?.status);
         res.status(500).json({ error: 'Failed to save data: ' + error.message });
     }
 };
