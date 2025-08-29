@@ -21,8 +21,8 @@ module.exports = async (req, res) => {
         return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const repoOwner = 'your-username';
-    const repoName = 'your-repo';
+    const repoOwner = 'spiderman786';
+    const repoName = 'my-security-forms';
     const filePath = 'data/submissions.json';
     const token = process.env.GITHUB_TOKEN;
 
