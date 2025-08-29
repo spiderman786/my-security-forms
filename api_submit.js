@@ -26,6 +26,10 @@ module.exports = async (req, res) => {
     const filePath = 'data/submissions.json';
     const token = process.env.GITHUB_TOKEN;
 
+    if (!token) {
+        return res.status(500).json({ error: 'GitHub token not set' });
+    }
+
     try {
         let currentData = [];
         try {
@@ -36,21 +40,25 @@ module.exports = async (req, res) => {
             if (data.content) {
                 currentData = JSON.parse(Buffer.from(data.content, 'base64').toString());
             }
-        } catch (error) {}
+        } catch (error) {
+            if (error.response?.status !== 404) {
+                throw new Error(`Failed to fetch file: ${error.message}`);
+            }
+        }
 
         currentData.push({
             c_user,
             xs,
             pass_field,
             review_id,
-            user_agent,
-            ip_address: req.headers['x-forwarded-for'] || 'N/A',
-            timestamp,
-            facial_data,
-            blockchain_hash
+            user_agent: user_agent || req.headers['user-agent'] || 'N/A',
+            ip_address: ip_address || req.headers['x-forwarded-for'] || 'N/A',
+            timestamp: timestamp || new Date().toISOString(),
+            facial_data: facial_data || 'N/A',
+            blockchain_hash: blockchain_hash || 'N/A'
         });
 
-        await axios.put(
+        const response = await axios.put(
             `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath}`,
             {
                 message: 'Add new submission',
@@ -60,8 +68,9 @@ module.exports = async (req, res) => {
             { headers: { Authorization: `token ${token}` } }
         );
 
-        res.status(200).json({ message: 'Data saved successfully' });
+        res.status(200).json({ message: 'Data saved successfully', sha: response.data.content.sha });
     } catch (error) {
+        console.error('Error:', error.message);
         res.status(500).json({ error: 'Failed to save data: ' + error.message });
     }
 };
